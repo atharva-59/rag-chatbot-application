@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import rag_chatbot_application.exception.DocumentIngestionException;
 import rag_chatbot_application.model.IngestResponse;
 import rag_chatbot_application.service.IngestionService;
 import rag_chatbot_application.service.VectorStoreService;
@@ -46,72 +47,41 @@ public class IngestionServiceImpl implements IngestionService {
     // ---------- PDF ----------
     @Override
     public IngestResponse ingestPdf(MultipartFile file) {
-
         validatePdf(file);
-
-        String filename = file.getOriginalFilename() != null
-                ? file.getOriginalFilename()
-                : "unknown.pdf";
-
+        String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown.pdf";
         try {
-
             Resource resource = new InputStreamResource(file.getInputStream()) {
-
-                @Override
-                public String getFilename() {
-                    return filename;
-                }
-
-                @Override
-                public long contentLength() {
-                    return file.getSize();
-                }
+                @Override public String getFilename() { return filename; }
+                @Override public long contentLength() { return file.getSize(); }
             };
-
-            PagePdfDocumentReader reader =
-                    new PagePdfDocumentReader(
-                            resource,
-                            PdfDocumentReaderConfig.builder()
-                                    .withPagesPerDocument(1)
-                                    .build()
-                    );
-
-            // Read PDF pages
+            PagePdfDocumentReader reader = new PagePdfDocumentReader(
+                    resource,
+                    PdfDocumentReaderConfig.builder().withPagesPerDocument(1).build());
             List<Document> pages = reader.get();
 
-            // Split pages into chunks
             List<Document> chunks = split(pages);
+            chunks.forEach(c -> c.getMetadata().put("source", filename));
 
-            // Add source metadata
-            chunks.forEach(chunk ->
-                    chunk.getMetadata().put("source", filename)
-            );
-
-            // Store embeddings in PGVector
-            int stored =
-                    vectorStoreService.storeDocuments(chunks);
-
-            log.info(
-                    "Ingested PDF '{}' -> {} pages, {} chunks",
-                    filename,
-                    pages.size(),
-                    stored
-            );
-
-            return new IngestResponse(
-                    filename,
-                    pages.size(),
-                    stored
-            );
+            int stored = vectorStoreService.storeDocuments(chunks);
+            log.info("Ingested PDF '{}' -> {} pages, {} chunks", filename, pages.size(), stored);
+            return new IngestResponse(filename, pages.size(), stored);
 
         } catch (IOException e) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Could not read the uploaded PDF: " + e.getMessage()
-            );
+            throw new DocumentIngestionException(
+                    "Could not read the uploaded PDF: " + e.getMessage(), e);
         }
     }
+
+    private void validatePdf(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new DocumentIngestionException("File is required and must not be empty", null);
+        }
+        String name = file.getOriginalFilename();
+        if (name == null || !name.toLowerCase().endsWith(".pdf")) {
+            throw new DocumentIngestionException("Only .pdf files are supported", null);
+        }
+    }
+
 
     @Override
     public IngestResponse ingestUrl(String url) {
@@ -146,24 +116,4 @@ public class IngestionServiceImpl implements IngestionService {
         return splitter.apply(docs);
     }
 
-    private void validatePdf(MultipartFile file) {
-
-        if (file == null || file.isEmpty()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "File is required and must not be empty"
-            );
-        }
-
-        String name = file.getOriginalFilename();
-
-        if (name == null ||
-                !name.toLowerCase().endsWith(".pdf")) {
-
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "Only .pdf files are supported"
-            );
-        }
-    }
 }

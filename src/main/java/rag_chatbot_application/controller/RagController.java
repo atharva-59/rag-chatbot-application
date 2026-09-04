@@ -1,4 +1,4 @@
-package rag_chatbot_application;
+package rag_chatbot_application.controller;
 
 //import com.example.ragchatbot.model.RagAnswer;
 //import com.example.ragchatbot.model.RagQueryRequest;

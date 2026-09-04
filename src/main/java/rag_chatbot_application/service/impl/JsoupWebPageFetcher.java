@@ -1,5 +1,6 @@
 package rag_chatbot_application.service.impl;
 
+//import com.example.ragchatbot.exception.WebPageFetchException;
 //import com.example.ragchatbot.service.WebPageFetcher;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
@@ -7,9 +8,8 @@ import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
-import org.springframework.web.server.ResponseStatusException;
+import rag_chatbot_application.exception.WebPageFetchException;
 import rag_chatbot_application.service.WebPageFetcher;
 
 import java.io.IOException;
@@ -40,12 +40,10 @@ public class JsoupWebPageFetcher implements WebPageFetcher {
                     .timeout(timeoutMs)
                     .maxBodySize(maxBodyBytes)
                     .followRedirects(true)
-                    .ignoreHttpErrors(true)   // we inspect the status ourselves
+                    .ignoreHttpErrors(true)
                     .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
                     .header("Accept-Language", "en-US,en;q=0.9")
-                    .header("Accept-Encoding", "gzip, deflate, br")
                     .header("Sec-Fetch-Mode", "navigate")
-                    .header("Sec-Fetch-Site", "none")
                     .header("Upgrade-Insecure-Requests", "1")
                     .referrer("https://www.google.com/")
                     .execute();
@@ -53,7 +51,7 @@ public class JsoupWebPageFetcher implements WebPageFetcher {
             int status = response.statusCode();
             if (status >= 400) {
                 log.warn("Fetch blocked/failed for {} -> HTTP {}", url, status);
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, friendlyError(status, url));
+                throw new WebPageFetchException(mapStatus(status), friendlyError(status, url));
             }
 
             Document doc = response.parse();
@@ -63,27 +61,25 @@ public class JsoupWebPageFetcher implements WebPageFetcher {
             String text = extractMainText(doc);
 
             if (text == null || text.strip().length() < 200) {
-                // Very little text usually means JS-rendered content (e.g. Medium, SPAs)
-                log.warn("Too little readable text from {} ({} chars) - likely JS-rendered",
-                        url, text == null ? 0 : text.length());
-                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                log.warn("Too little readable text from {} ({} chars)", url, text == null ? 0 : text.length());
+                throw new WebPageFetchException(422,
                         "This page has little readable text and may require JavaScript to load its content. " +
                                 "Try a different URL (article/blog/docs pages work best).");
             }
             return new FetchedPage(title, text);
 
-        } catch (ResponseStatusException e) {
-            throw e; // already a clean, user-facing error
+        } catch (WebPageFetchException e) {
+            throw e; // already a clean domain exception
         } catch (IllegalArgumentException e) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid URL: " + url);
+            throw new WebPageFetchException(400, "Invalid URL: " + url);
         } catch (IOException e) {
             log.warn("Fetch IOException for {} -> {}: {}", url, e.getClass().getSimpleName(), e.getMessage());
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Could not fetch this URL (" + e.getClass().getSimpleName() + "). It may be down, slow, or blocking automated access.");
+            throw new WebPageFetchException(422,
+                    "Could not fetch this URL (" + e.getClass().getSimpleName() +
+                            "). It may be down, slow, or blocking automated access.");
         }
     }
 
-    /** Prefer the main article region; fall back to whole body. */
     private String extractMainText(Document doc) {
         for (String selector : new String[]{"article", "main", "[role=main]", ".post-content", ".article-content"}) {
             var el = doc.selectFirst(selector);
@@ -92,6 +88,14 @@ public class JsoupWebPageFetcher implements WebPageFetcher {
             }
         }
         return doc.body() != null ? doc.body().text() : "";
+    }
+
+    private int mapStatus(int status) {
+        // 401/403/404/429 pass through; everything else -> 422 (we couldn't process it)
+        return switch (status) {
+            case 401, 403, 404, 429 -> status;
+            default -> 422;
+        };
     }
 
     private String friendlyError(int status, String url) {

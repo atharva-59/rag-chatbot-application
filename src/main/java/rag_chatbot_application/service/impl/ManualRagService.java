@@ -1,9 +1,16 @@
 package rag_chatbot_application.service.impl;
 
-
+//import com.example.ragchatbot.model.Citation;
+//import com.example.ragchatbot.model.RagAnswer;
+//import com.example.ragchatbot.model.SearchResult;
+//import com.example.ragchatbot.service.CitationMapper;
+//import com.example.ragchatbot.service.RagService;
+//import com.example.ragchatbot.service.ResilientChatService;
+//import com.example.ragchatbot.service.RetrievalService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import rag_chatbot_application.model.Citation;
@@ -11,12 +18,12 @@ import rag_chatbot_application.model.RagAnswer;
 import rag_chatbot_application.model.SearchResult;
 import rag_chatbot_application.service.CitationMapper;
 import rag_chatbot_application.service.RagService;
+import rag_chatbot_application.service.ResilientChatService;
 import rag_chatbot_application.service.RetrievalService;
 import reactor.core.publisher.Flux;
 
 import java.util.List;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 @Service
 @ConditionalOnProperty(name = "rag.mode", havingValue = "manual")
@@ -33,69 +40,52 @@ public class ManualRagService implements RagService {
 
     private final ChatClient chatClient;
     private final RetrievalService retrievalService;
+    private final ResilientChatService resilientChatService;
 
     public ManualRagService(ChatClient.Builder chatClientBuilder,
-                            RetrievalService retrievalService) {
+                            RetrievalService retrievalService,
+                            ResilientChatService resilientChatService) {
         this.chatClient = chatClientBuilder.build();
         this.retrievalService = retrievalService;
+        this.resilientChatService = resilientChatService;
     }
 
     @Override
     public RagAnswer answer(String question) {
-        // ---------- STAGE 1: RETRIEVE (adaptive) ----------
-        log.info("=== RAG STAGE 1: RETRIEVE ===");
-        log.info("Question: '{}'", question);
         List<SearchResult> hits = retrievalService.retrieve(question);
-        log.info("Final retrieved chunk count: {}", hits.size());
-
-        IntStream.range(0, hits.size()).forEach(i -> {
-            SearchResult r = hits.get(i);
-            String preview = r.content().length() > 120
-                    ? r.content().substring(0, 120) + "..." : r.content();
-            log.info("  [chunk {}] score={} source={} :: {}",
-                    i + 1, r.score(),
-                    r.metadata() != null ? r.metadata().get("source") : "n/a", preview);
-        });
-
-        // ---------- STAGE 2: AUGMENT ----------
-        log.info("=== RAG STAGE 2: AUGMENT ===");
         String augmentedUser = buildAugmentedPrompt(question, hits);
-        log.info("Augmented prompt sent to the model:\n{}", augmentedUser);
 
-        // ---------- STAGE 3: GENERATE ----------
-        log.info("=== RAG STAGE 3: GENERATE ===");
-        String answer = chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(augmentedUser)
-                .call()
-                .content();
-        log.info("Model answer: {}", answer);
+        // Generation now goes through the resilient fallback chain
+        String answer = resilientChatService.call(model ->
+                chatClient.prompt()
+                        .system(SYSTEM_PROMPT)
+                        .user(augmentedUser)
+                        .options(GoogleGenAiChatOptions.builder().model(model))
+                        .call()
+                        .content());
 
-        // ---------- STAGE 4: CITATIONS ----------
         List<Citation> citations = CitationMapper.from(hits);
-        log.info("=== RAG COMPLETE ({} citations) ===", citations.size());
-
         return new RagAnswer(answer, citations);
     }
 
     @Override
     public Flux<String> streamAnswer(String question) {
-        log.info("=== RAG STREAM: RETRIEVE for '{}' ===", question);
         List<SearchResult> hits = retrievalService.retrieve(question);
         String augmentedUser = buildAugmentedPrompt(question, hits);
 
-        return chatClient.prompt()
-                .system(SYSTEM_PROMPT)
-                .user(augmentedUser)
-                .stream()
-                .content();
+        return resilientChatService.stream(model ->
+                chatClient.prompt()
+                        .system(SYSTEM_PROMPT)
+                        .user(augmentedUser)
+                        .options(GoogleGenAiChatOptions.builder().model(model))
+                        .stream()
+                        .content());
     }
 
     private String buildAugmentedPrompt(String question, List<SearchResult> hits) {
         String context = hits.stream()
                 .map(SearchResult::content)
                 .collect(Collectors.joining("\n---\n"));
-
         return """
                 Answer the question using ONLY the context below.
                 If the answer isn't in the context, say you don't know.
