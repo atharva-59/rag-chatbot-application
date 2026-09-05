@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ragdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Auto-create the pgvector extension on first startup
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: rag-app
+    depends_on:
+      postgres:
+        condition: service_healthy   # wait until DB is ready
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/ragdb
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      GEMINI_API_KEY: ${GEMINI_API_KEY}   # supplied from your shell/.env
+    ports:
+      - "8081:8081"
+
+volumes:
+  pgdata:

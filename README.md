@@ -204,21 +204,72 @@ src/main/resources/
 
 ---
 
-## 🚀 Getting Started (Run It Locally)
+## 🚀 Getting Started
 
-### Prerequisites
-- **Java 21+**
-- **Maven 3.9+**
-- **Docker** (easiest way to run PostgreSQL + pgvector)
-- A **Google Gemini API key** - get one free at [Google AI Studio](https://aistudio.google.com/apikey)
+You can run DocuMind in **two ways** — pick whichever suits you:
 
-### 1. Clone the repo
+| Option | Best for | Requirements |
+|---|---|---|
+| **🅰️ Docker (one command)** | Quickest trial, no Java/Maven needed | Docker only |
+| **🅱️ Local (IDE / Maven)** | Development & debugging | Java 21 + Maven + Docker (for DB) |
+
+> **Everyone needs a Google Gemini API key** — get one free at [Google AI Studio](https://aistudio.google.com/apikey).
+
+---
+
+### 🅰️ Option A — Run with Docker (recommended, one command)
+
+The entire stack (app + PostgreSQL + pgvector) starts with a single command. **Only Docker is required** — no Java or Maven needed.
+
+**1. Clone the repo**
 ```bash
-git clone https://github.com/<your-username>/documind.git
-cd documind
+git clone https://github.com/atharva-59/rag-chatbot-application.git
+cd rag-chatbot-application
 ```
 
-### 2. Start PostgreSQL with pgvector
+**2. Provide your Gemini API key**
+```bash
+export GEMINI_API_KEY="your-gemini-api-key"
+```
+> Windows PowerShell: `$env:GEMINI_API_KEY="your-gemini-api-key"`
+> Or create a `.env` file in the project root with: `GEMINI_API_KEY=your-gemini-api-key`
+
+**3. Start everything**
+```bash
+docker compose up --build
+```
+
+That's it! Docker will:
+- Start PostgreSQL with pgvector (extension auto-created)
+- Wait until the database is healthy
+- Build and launch the app on **http://localhost:8081**
+
+**4. Try it out** 🎉
+- **Demo UI:** http://localhost:8081/
+- **Swagger UI:** http://localhost:8081/swagger-ui.html
+- **Health:** http://localhost:8081/actuator/health
+
+**Stop everything:**
+```bash
+docker compose down          # stop containers
+docker compose down -v       # stop + delete the database volume
+```
+
+---
+
+### 🅱️ Option B — Run Locally (IDE / Maven)
+
+Best if you want to develop, debug, or run from IntelliJ.
+
+**Prerequisites:** Java 21+, Maven 3.9+, Docker (for the database only)
+
+**1. Clone the repo**
+```bash
+git clone https://github.com/atharva-59/rag-chatbot-application.git
+cd rag-chatbot-application
+```
+
+**2. Start PostgreSQL with pgvector**
 ```bash
 docker run --name rag-postgres \
   -e POSTGRES_USER=postgres \
@@ -233,7 +284,7 @@ Enable the extension (only needed once):
 docker exec -it rag-postgres psql -U postgres -d ragdb -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
-### 3. Set environment variables
+**3. Set environment variables**
 ```bash
 export GEMINI_API_KEY="your-gemini-api-key"
 export DB_USERNAME="postgres"
@@ -242,16 +293,17 @@ export DB_PASSWORD="postgres"
 export DB_URL="jdbc:postgresql://localhost:5432/ragdb"
 export SPRING_PROFILES_ACTIVE="dev"
 ```
+> Windows PowerShell: `$env:GEMINI_API_KEY="..."`
+>
+> In **IntelliJ**: Run → Edit Configurations → add these as environment variables.
 
-> On Windows PowerShell: `$env:GEMINI_API_KEY="..."`
-
-### 4. Run the app
+**4. Run the app**
 ```bash
 ./mvnw spring-boot:run
 ```
 The app starts on **http://localhost:8081**.
 
-### 5. Try it out 🎉
+**5. Try it out** 🎉
 - **Demo UI:** http://localhost:8081/
 - **Swagger UI:** http://localhost:8081/swagger-ui.html
 - **Health:** http://localhost:8081/actuator/health
