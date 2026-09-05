@@ -1,8 +1,7 @@
 package rag_chatbot_application.controller;
 
-//import com.example.ragchatbot.model.RagAnswer;
-//import com.example.ragchatbot.model.RagQueryRequest;
-//import com.example.ragchatbot.service.RagService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +12,7 @@ import reactor.core.publisher.Flux;
 
 @RestController
 @RequestMapping("/api/rag")
+@Tag(name = "RAG", description = "Ask grounded questions over ingested documents")
 public class RagController {
 
     private final RagService ragService;
@@ -21,13 +21,15 @@ public class RagController {
         this.ragService = ragService;
     }
 
-    /** Non-streaming RAG answer with citations. */
+    @Operation(summary = "Ask a question (non-streaming)",
+            description = "Retrieves relevant context, generates a grounded answer, and returns citations.")
     @PostMapping(value = "/ask", consumes = MediaType.APPLICATION_JSON_VALUE)
     public RagAnswer ask(@Valid @RequestBody RagQueryRequest request) {
         return ragService.answer(request.question());
     }
 
-    /** Streaming RAG answer (tokens via SSE). */
+    @Operation(summary = "Ask a question (streaming SSE)",
+            description = "Same as /ask but streams tokens as they are generated.")
     @PostMapping(value = "/ask/stream",
             consumes = MediaType.APPLICATION_JSON_VALUE,
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)

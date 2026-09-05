@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import rag_chatbot_application.exception.DocumentIngestionException;
+import rag_chatbot_application.metrics.RagMetrics;
 import rag_chatbot_application.model.IngestResponse;
 import rag_chatbot_application.service.IngestionService;
 import rag_chatbot_application.service.VectorStoreService;
@@ -31,15 +32,16 @@ public class IngestionServiceImpl implements IngestionService {
 
     private final VectorStoreService vectorStoreService;
     private final WebPageFetcher webPageFetcher;
+    private final RagMetrics ragMetrics;
     private final int chunkSize;
 
     public IngestionServiceImpl(
-            VectorStoreService vectorStoreService, WebPageFetcher webPageFetcher,
+            VectorStoreService vectorStoreService, WebPageFetcher webPageFetcher,RagMetrics ragMetrics,
             @Value("${rag.chunking.chunk-size:800}") int chunkSize) {
 
         this.vectorStoreService = vectorStoreService;
         this.webPageFetcher = webPageFetcher;
-
+        this.ragMetrics=ragMetrics;
 
         this.chunkSize = chunkSize;
     }
@@ -63,6 +65,7 @@ public class IngestionServiceImpl implements IngestionService {
             chunks.forEach(c -> c.getMetadata().put("source", filename));
 
             int stored = vectorStoreService.storeDocuments(chunks);
+            ragMetrics.incIngested();
             log.info("Ingested PDF '{}' -> {} pages, {} chunks", filename, pages.size(), stored);
             return new IngestResponse(filename, pages.size(), stored);
 
@@ -100,6 +103,7 @@ public class IngestionServiceImpl implements IngestionService {
         });
 
         int stored = vectorStoreService.storeDocuments(chunks);
+        ragMetrics.incIngested();
         log.info("Ingested URL '{}' -> {} chunks", url, stored);
         return new IngestResponse(url, 1, stored);
     }

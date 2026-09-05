@@ -13,6 +13,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import rag_chatbot_application.metrics.RagMetrics;
 import rag_chatbot_application.model.Citation;
 import rag_chatbot_application.model.RagAnswer;
 import rag_chatbot_application.model.SearchResult;
@@ -41,17 +42,21 @@ public class ManualRagService implements RagService {
     private final ChatClient chatClient;
     private final RetrievalService retrievalService;
     private final ResilientChatService resilientChatService;
+    private final RagMetrics ragMetrics;
 
     public ManualRagService(ChatClient.Builder chatClientBuilder,
                             RetrievalService retrievalService,
-                            ResilientChatService resilientChatService) {
+                            ResilientChatService resilientChatService,
+                            RagMetrics ragMetrics) {
         this.chatClient = chatClientBuilder.build();
         this.retrievalService = retrievalService;
         this.resilientChatService = resilientChatService;
+        this.ragMetrics = ragMetrics;
     }
 
     @Override
     public RagAnswer answer(String question) {
+        ragMetrics.incQuery();
         List<SearchResult> hits = retrievalService.retrieve(question);
         String augmentedUser = buildAugmentedPrompt(question, hits);
 

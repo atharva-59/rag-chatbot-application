@@ -114,6 +114,12 @@
             <version>7.0.9</version>
             <scope>compile</scope>
         </dependency>
+
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.7.0</version>
+        </dependency>
     </dependencies>
 
     <!-- Needed for milestone versions (remove if you pin a GA version on Maven Central) -->
