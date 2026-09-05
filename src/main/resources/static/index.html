@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>RAG Chatbot — Ask your documents</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet">
+    <style>
+        :root{
+            --bg:#14151c;
+            --bg-panel:#191b24;
+            --bg-inset:#0e0f15;
+            --ink:#e9e6dc;
+            --ink-dim:#948f80;
+            --ink-faint:#5c5a54;
+            --rule:#2c2b38;
+            --gold:#c8a45c;
+            --gold-strong:#dab567;
+            --teal:#6f9c93;
+            --error:#d97a6c;
+            --success:#86a878;
+            --radius:3px;
+        }
+        *{ box-sizing:border-box; }
+        html{ scrollbar-color: var(--gold) var(--bg-inset); }
+        body{
+            margin:0;
+            background:var(--bg);
+            color:var(--ink);
+            font-family:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+            line-height:1.5;
+            background-image:
+                radial-gradient(circle at 1px 1px, rgba(232,229,216,0.05) 1px, transparent 0);
+            background-size: 22px 22px;
+        }
+        .serif{ font-family:'Source Serif 4', 'Iowan Old Style', Georgia, serif; }
+
+        .desk{
+            max-width:1040px;
+            margin:0 auto;
+            padding:56px 28px 90px;
+            animation: settle .6s ease both;
+        }
+        @keyframes settle{ from{ opacity:0; transform:translateY(6px);} to{ opacity:1; transform:translateY(0);} }
+
+        .desk-header{ display:flex; align-items:flex-start; gap:16px; margin-bottom:52px; max-width:640px; }
+        .mark{ flex:none; margin-top:6px; }
+        .desk-header h1{
+            font-family:'Source Serif 4', Georgia, serif;
+            font-weight:500;
+            font-style:italic;
+            font-size:clamp(1.9rem, 4vw, 2.6rem);
+            line-height:1.2;
+            margin:0 0 12px;
+            color:var(--ink);
+            letter-spacing:-0.005em;
+        }
+        .tagline{ color:var(--ink-dim); font-size:0.92rem; line-height:1.65; max-width:48ch; margin:0; }
+
+        .desk-body{ display:grid; grid-template-columns:260px 1fr; gap:48px; align-items:start; }
+        @media (max-width:860px){ .desk-body{ grid-template-columns:1fr; } }
+
+        .ledger{ border-right:1px solid var(--rule); padding-right:36px; }
+        @media (max-width:860px){
+            .ledger{ border-right:none; border-bottom:1px solid var(--rule); padding-right:0; padding-bottom:32px; margin-bottom:8px; }
+        }
+
+        .step{ display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+        .step-num{
+            flex:none; width:22px; height:22px; border:1px solid var(--gold); color:var(--gold);
+            border-radius:var(--radius); display:flex; align-items:center; justify-content:center;
+            font-size:0.76rem;
+        }
+        .step h2{ font-family:'Source Serif 4', Georgia, serif; font-style:italic; font-weight:500;
+            font-size:1.08rem; margin:0; color:var(--ink); }
+
+        .field{ margin-bottom:16px; }
+        .field label{ display:block; font-size:0.76rem; color:var(--ink-dim); margin-bottom:6px; }
+        .field .row{ display:flex; gap:8px; }
+        .field .row input{ flex:1; min-width:0; }
+
+        input[type="file"], input[type="url"], input[type="text"], textarea{
+            width:100%; background:var(--bg-inset); border:1px solid var(--rule); color:var(--ink);
+            border-radius:var(--radius); padding:9px 11px; font-family:inherit; font-size:0.84rem;
+        }
+        input[type="file"]{ padding:7px 8px; font-size:0.78rem; color:var(--ink-dim); }
+        textarea{ resize:vertical; min-height:96px; font-size:0.9rem; }
+        input:focus-visible, textarea:focus-visible, button:focus-visible, .stream-toggle:focus-within{
+            outline:2px solid var(--gold); outline-offset:1px; border-color:var(--gold);
+        }
+
+        button{
+            background:transparent; border:1px solid var(--gold); color:var(--gold);
+            padding:8px 16px; font-family:inherit; font-size:0.82rem; border-radius:var(--radius);
+            cursor:pointer; transition:background .15s ease, color .15s ease; white-space:nowrap;
+        }
+        button:hover:not(:disabled){ background:var(--gold); color:#14151c; }
+        button:disabled{ border-color:var(--rule); color:var(--ink-faint); cursor:not-allowed; }
+        #askBtn{ background:var(--gold); color:#14151c; }
+        #askBtn:hover:not(:disabled){ background:var(--gold-strong); }
+        #askBtn:disabled{ background:var(--rule); color:var(--ink-faint); border-color:var(--rule); }
+
+        @media (max-width:480px){
+            .field .row{ flex-direction:column; }
+            .field .row button{ width:100%; }
+        }
+
+        .status{ font-size:0.78rem; margin-top:10px; min-height:16px; }
+        .status.ok{ color:var(--success); }
+        .status.err{ color:var(--error); }
+        .status.info{ color:var(--ink-dim); }
+
+        .ledger-list{ margin-top:22px; }
+        .ledger-entry{
+            display:flex; gap:10px; padding:10px 0; border-bottom:1px dashed var(--rule);
+            font-size:0.8rem; animation: entry-in .3s ease both;
+        }
+        @keyframes entry-in{ from{ opacity:0; transform:translateY(-3px);} to{ opacity:1; transform:translateY(0);} }
+        .ledger-entry .num{ color:var(--gold); flex:none; }
+        .ledger-entry .src{ color:var(--ink); word-break:break-word; }
+        .ledger-entry .meta{ color:var(--ink-faint); font-size:0.72rem; margin-top:2px; }
+
+        .ask-controls{ display:flex; align-items:center; gap:16px; margin-top:12px; flex-wrap:wrap; }
+        .stream-toggle{ display:flex; align-items:center; gap:6px; font-size:0.78rem; color:var(--ink-dim); cursor:pointer; }
+        .stream-toggle input{ accent-color:var(--gold); cursor:pointer; }
+
+        .answer{
+            background:var(--bg-inset); border:1px solid var(--rule); border-radius:4px;
+            padding:22px 24px; margin-top:26px; min-height:52px; white-space:pre-wrap;
+            font-family:'Source Serif 4', Georgia, serif; font-size:1.05rem; line-height:1.75;
+            color:var(--ink);
+        }
+        .answer:empty{ display:none; }
+        .caret{
+            display:inline-block; width:8px; height:1em; background:var(--gold);
+            vertical-align:text-bottom; margin-left:2px; animation:blink 1s steps(1) infinite;
+        }
+        @keyframes blink{ 50%{ opacity:0; } }
+
+        .section-label{
+            font-size:0.8rem; color:var(--ink-dim); font-family:'IBM Plex Mono', monospace;
+            padding-bottom:8px; margin-bottom:6px; border-bottom:1px solid var(--rule);
+        }
+        .citations{ margin-top:30px; }
+        .citation{ display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--rule); }
+        .citation:last-child{ border-bottom:none; }
+        .citation .index{
+            flex:none; width:22px; height:22px; border:1px solid var(--rule); color:var(--gold);
+            border-radius:var(--radius); display:flex; align-items:center; justify-content:center;
+            font-size:0.76rem; margin-top:1px;
+        }
+        .citation .body{ flex:1; min-width:0; }
+        .citation .src{ color:var(--teal); font-weight:500; font-size:0.82rem; word-break:break-all; }
+        .citation .score{ color:var(--ink-faint); font-size:0.72rem; margin-left:8px; }
+        .citation .snippet{
+            font-family:'Source Serif 4', Georgia, serif; font-style:italic; color:var(--ink-dim);
+            margin-top:6px; font-size:0.94rem; line-height:1.6;
+        }
+
+        @media (prefers-reduced-motion: reduce){
+            *{ animation:none !important; transition:none !important; }
+        }
+    </style>
+</head>
+<body>
+<div class="desk">
+
+    <div class="desk-header">
+        <svg class="mark" width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 3.5C4 3.22 4.22 3 4.5 3H12V22L5 20.2C4.4 20.05 4 19.5 4 18.9V3.5Z" stroke="#c8a45c" stroke-width="1.3" stroke-linejoin="round"/>
+            <path d="M22 3.5C22 3.22 21.78 3 21.5 3H14V22L21 20.2C21.6 20.05 22 19.5 22 18.9V3.5Z" stroke="#c8a45c" stroke-width="1.3" stroke-linejoin="round"/>
+        </svg>
+        <div>
+            <h1>DocuMind</h1>
+            <p class="tagline">Ingest a PDF or a page from the web, then ask a question. Every answer points back to the passage it came from.</p>
+        </div>
+    </div>
+
+    <div class="desk-body">
+
+        <!-- ---------- INGEST ---------- -->
+        <aside class="ledger">
+            <div class="step">
+                <span class="step-num">1</span>
+                <h2>Add a source</h2>
+            </div>
+
+            <div class="field">
+                <label for="pdfFile">Upload a PDF</label>
+                <div class="row">
+                    <input type="file" id="pdfFile" accept="application/pdf"/>
+                    <button onclick="ingestPdf()">Add</button>
+                </div>
+            </div>
+
+            <div class="field">
+                <label for="urlInput">Upload an URL</label>
+                <div class="row">
+                    <input type="url" id="urlInput" placeholder="https://example.com/article"/>
+                    <button onclick="ingestUrl()">Add</button>
+                </div>
+            </div>
+
+            <div class="status info" id="ingestStatus"></div>
+            <div class="ledger-list" id="ledgerList"></div>
+        </aside>
+
+        <!-- ---------- ASK ---------- -->
+        <main class="reading-room">
+            <div class="step">
+                <span class="step-num">2</span>
+                <h2>Ask a question</h2>
+            </div>
+
+            <textarea id="question" placeholder="What does this document say about…"></textarea>
+
+            <div class="ask-controls">
+                <button id="askBtn" onclick="ask()">Ask</button>
+                <label class="stream-toggle"><input type="checkbox" id="streamToggle" checked/> stream response</label>
+                <span class="status info" id="askStatus"></span>
+            </div>
+
+            <div class="answer" id="answer"></div>
+            <div class="citations" id="citations"></div>
+        </main>
+    </div>
+</div>
+
+<script>
+    // Same-origin, so relative paths work (served from Spring Boot on :8081)
+    const API = "";
+
+    function setStatus(id, msg, type = "info") {
+        const el = document.getElementById(id);
+        el.textContent = msg;
+        el.className = "status " + type;
+    }
+
+    function appendLedgerEntry(source, chunks) {
+        const list = document.getElementById("ledgerList");
+        const entry = document.createElement("div");
+        entry.className = "ledger-entry";
+        const n = list.children.length + 1;
+        entry.innerHTML =
+            `<span class="num">${n}.</span>` +
+            `<div><div class="src">${(source || "untitled").toString().replace(/</g, "&lt;")}</div>` +
+            `<div class="meta">${chunks} chunk${chunks === 1 ? "" : "s"} stored</div></div>`;
+        list.appendChild(entry);
+    }
+
+    // ---------- INGEST PDF ----------
+    async function ingestPdf() {
+        const fileInput = document.getElementById("pdfFile");
+        if (!fileInput.files.length) { setStatus("ingestStatus", "Choose a PDF first.", "err"); return; }
+
+        const form = new FormData();
+        form.append("file", fileInput.files[0]);
+        setStatus("ingestStatus", "Uploading & ingesting PDF…", "info");
+
+        try {
+            const res = await fetch(API + "/api/ingest/pdf", { method: "POST", body: form });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || "Ingestion failed");
+            setStatus("ingestStatus", `Ingested — ${data.chunksStored} chunks stored.`, "ok");
+            appendLedgerEntry(data.source, data.chunksStored);
+        } catch (e) {
+            setStatus("ingestStatus", e.message, "err");
+        }
+    }
+
+    // ---------- INGEST URL ----------
+    async function ingestUrl() {
+        const url = document.getElementById("urlInput").value.trim();
+        if (!url) { setStatus("ingestStatus", "Enter a URL first.", "err"); return; }
+        setStatus("ingestStatus", "Fetching & ingesting URL…", "info");
+
+        try {
+            const res = await fetch(API + "/api/ingest/url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ url })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || "Ingestion failed");
+            setStatus("ingestStatus", `Ingested — ${data.chunksStored} chunks stored.`, "ok");
+            appendLedgerEntry(data.source, data.chunksStored);
+        } catch (e) {
+            setStatus("ingestStatus", e.message, "err");
+        }
+    }
+
+    // ---------- ASK ----------
+    async function ask() {
+        const question = document.getElementById("question").value.trim();
+        if (!question) { setStatus("askStatus", "Type a question first.", "err"); return; }
+
+        const streaming = document.getElementById("streamToggle").checked;
+        document.getElementById("answer").innerHTML = "";
+        document.getElementById("citations").innerHTML = "";
+        document.getElementById("askBtn").disabled = true;
+        setStatus("askStatus", "Thinking…", "info");
+
+        try {
+            if (streaming) {
+                await askStream(question);
+            } else {
+                await askBlocking(question);
+            }
+            setStatus("askStatus", "Done", "ok");
+        } catch (e) {
+            setStatus("askStatus", e.message, "err");
+        } finally {
+            document.getElementById("askBtn").disabled = false;
+        }
+    }
+
+    // ---------- NON-STREAMING (also shows citations) ----------
+    async function askBlocking(question) {
+        const res = await fetch(API + "/api/rag/ask", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ question })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Request failed");
+
+        document.getElementById("answer").textContent = data.answer || "(no answer)";
+        renderCitations(data.citations || []);
+    }
+
+    // ---------- STREAMING (POST + ReadableStream, since EventSource can't POST) ----------
+    async function askStream(question) {
+        const res = await fetch(API + "/api/rag/ask/stream", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream"
+            },
+            body: JSON.stringify({ question })
+        });
+
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || "Stream failed");
+        }
+        if (!res.body) throw new Error("Streaming not supported in this browser");
+
+        const answerEl = document.getElementById("answer");
+        answerEl.innerHTML = '<span class="stream-text"></span><span class="caret"></span>';
+        const textSpan = answerEl.querySelector(".stream-text");
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+
+            // SSE events are separated by a blank line
+            let idx;
+            while ((idx = buffer.indexOf("\n\n")) !== -1) {
+                const rawEvent = buffer.slice(0, idx);
+                buffer = buffer.slice(idx + 2);
+
+                // Extract "data:" payload lines
+                rawEvent.split(/\r?\n/).forEach(line => {
+                    if (line.startsWith("data:")) {
+                        textSpan.textContent += line.slice(5).trimStart();
+                    }
+                });
+            }
+        }
+
+        const caret = answerEl.querySelector(".caret");
+        if (caret) caret.remove();
+    }
+
+    // ---------- RENDER CITATIONS ----------
+    function renderCitations(citations) {
+        const box = document.getElementById("citations");
+        if (!citations.length) return;
+        box.innerHTML = "<div class='section-label'>Sources cited</div>";
+        citations.forEach((c, i) => {
+            const div = document.createElement("div");
+            div.className = "citation";
+            const score = c.score != null ? ` <span class="score">${(c.score * 100).toFixed(0)}% match</span>` : "";
+            div.innerHTML =
+                `<div class="index">${i + 1}</div>` +
+                `<div class="body">` +
+                    `<span class="src">${c.source || "unknown"}</span>${score}` +
+                    `<div class="snippet">${(c.snippet || "").replace(/</g, "&lt;")}</div>` +
+                `</div>`;
+            box.appendChild(div);
+        });
+    }
+</script>
+</body>
+</html>
